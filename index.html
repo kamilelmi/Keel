@@ -25,6 +25,7 @@ LAYOUT  bottom tab bar on the phone cover screen, side rail + two columns when u
 --good:light-dark(#178a4c,#4cc38a);--bad:light-dark(#c63636,#ff7d7d);--r:18px;--nav:68px}
 :root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
 *{box-sizing:border-box;min-width:0}
+[hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Ubuntu,"Noto Sans",sans-serif;-webkit-tap-highlight-color:transparent;overflow-x:clip;min-height:100dvh}
 button,input,textarea,select{font:inherit;color:inherit}
@@ -77,7 +78,7 @@ main{padding:calc(10px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-
 .chip{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--card2);font-size:14px;font-weight:600}
 .chip svg{width:16px;height:16px}
 .chip.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-input[type=text],input[type=search],input[type=number],input[type=date],input[type=datetime-local],textarea,select{width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card2);font-size:16px}
+input[type=text],input[type=password],input[type=search],input[type=number],input[type=date],input[type=datetime-local],textarea,select{width:100%;min-height:44px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card2);font-size:16px}
 textarea{min-height:240px;resize:vertical;line-height:1.65;display:block}
 input:focus,textarea:focus,select:focus{outline:2px solid var(--acc);outline-offset:-1px;border-color:transparent}
 .empty{color:var(--mute);padding:14px 0;font-size:15px}
@@ -242,6 +243,16 @@ dialog .fld>span{font-size:13px}
 #toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 #toast button{background:none;border:0;color:inherit;font-weight:800;text-decoration:underline;min-height:32px;padding:0 4px}
 @media(min-width:760px){#toast{bottom:24px;left:calc(50% + 48px)}}
+#lock{position:fixed;inset:0;z-index:100;background:var(--bg);display:grid;place-items:center;padding:24px max(24px,env(safe-area-inset-left)) calc(24px + env(safe-area-inset-bottom))}
+#lock[hidden]{display:none}
+.lockbox{display:grid;gap:14px;justify-items:center;text-align:center;width:min(360px,100%)}
+.lockbox img{width:72px;height:72px;border-radius:18px}
+.lockbox h1{font-size:26px}
+.lockbox input{text-align:center;font-size:22px;letter-spacing:.15em}
+.lockbox .btn{width:100%}
+.err{color:var(--bad);min-height:1.4em;font-weight:600;font-size:14px;margin:0}
+.warn{color:var(--bad);font-size:14px;font-weight:600;margin:0 0 4px}
+body.locked>nav,body.locked>main,body.locked>#toast{visibility:hidden}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -251,11 +262,21 @@ dialog .fld>span{font-size:13px}
   <div class="wrap">
     <header class="top">
       <h1 id="title">Today</h1>
+      <button class="ibtn" data-a="lockNow" aria-label="Lock Keel now" id="lockTop" hidden></button>
       <button class="ibtn" data-a="settings" aria-label="Settings and backup" id="gear"></button>
     </header>
     <section id="view" aria-live="off"></section>
   </div>
 </main>
+<div id="lock" hidden><form id="lockForm" class="lockbox" autocomplete="off">
+  <img src="icon-192.png" alt="">
+  <h1>Keel is locked</h1>
+  <p class="mute">Enter your passcode to open your habits and journal.</p>
+  <input type="password" id="lockIn" autocomplete="off" aria-label="Passcode" required>
+  <button class="btn pri" id="lockGo">Unlock</button>
+  <p class="err" id="lockErr" role="alert"></p>
+  <button type="button" class="btn ghost sm" data-a="forgot">Forgot passcode?</button>
+</form></div>
 <dialog id="dlg"><form id="dlgForm" method="dialog"></form></dialog>
 <div id="toast" role="status" aria-live="polite"></div>
 
@@ -295,6 +316,7 @@ const I={
  play:'<svg viewBox="0 0 24 24" class="fillc"><path d="M8 5.5v13a1 1 0 0 0 1.5.9l10.4-6.5a1 1 0 0 0 0-1.8L9.5 4.6A1 1 0 0 0 8 5.5z"/></svg>',
  pause:'<svg viewBox="0 0 24 24"><path d="M8.5 5v14M15.5 5v14"/></svg>',
  reset:'<svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.6M4 4v4.6h4.6"/></svg>',
+ lock:'<svg viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>',
  skip:'<svg viewBox="0 0 24 24"><path d="M6 5l9 7-9 7zM18 5v14"/></svg>'
 };
 const COLORS=['#2f5bea','#0f9d8a','#43a047','#d99a00','#ef6c35','#e04f5f','#a35bd8','#607080'];
@@ -322,10 +344,25 @@ function normalize(d){const b=blank();
  counters:arr(d.counters).filter(c=>c&&c.name).map(c=>({...c,id:okId(c.id),name:String(c.name),start:Math.min(okNum(c.start,Date.now()),Date.now()),u:okNum(c.u),resets:arr(c.resets).filter(r=>r).map(r=>({at:okNum(r.at),len:okNum(r.len),note:String(r.note||'')}))})),
  todos:arr(d.todos).filter(x=>x&&x.text).map(x=>({...x,id:okId(x.id),text:String(x.text),done:!!x.done,doneAt:okNum(x.doneAt),u:okNum(x.u)})),
  sessions:arr(d.sessions).filter(x=>x&&x.at).map(x=>({...x,id:okId(x.id),at:okNum(x.at),mins:okNum(x.mins),label:String(x.label||''),u:okNum(x.u)}))}}
-function load(){try{const d=JSON.parse(localStorage.getItem(STORE));if(d&&d.v)return normalize(d)}catch(e){}return blank()}
+/* passcode lock: when on, everything in STORE is AES-256-GCM encrypted with a key derived from the passcode */
+const ITER=600000,te=new TextEncoder(),td=new TextDecoder();
+let locked=false,LK=null,LSALT=null,LIT=ITER,lockDelay=1,hiddenAt=0,fails=0,waitUntil=0;
+function b64e(buf){const u=new Uint8Array(buf);let x='';for(let i=0;i<u.length;i+=0x8000)x+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(x)}
+function b64d(x){const b=atob(x),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u}
+async function deriveKey(pass,salt,it){const base=await crypto.subtle.importKey('raw',te.encode(pass.normalize('NFC')),'PBKDF2',false,['deriveKey']);
+ return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:it,hash:'SHA-256'},base,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+async function encryptObj(obj,key,salt,it){const iv=crypto.getRandomValues(new Uint8Array(12));const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,te.encode(JSON.stringify(obj)));
+ return{alg:'AES-256-GCM/PBKDF2-SHA256',it,salt:b64e(salt),iv:b64e(iv),ct:b64e(ct)}}
+async function decryptObj(enc,key){return JSON.parse(td.decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:b64d(enc.iv)},key,b64d(enc.ct))))}
+const okEnc=e=>e&&typeof e.salt==='string'&&typeof e.iv==='string'&&typeof e.ct==='string'&&Number.isFinite(+e.it)&&+e.it>=1e5;
+function load(){try{const d=JSON.parse(localStorage.getItem(STORE));if(d&&okEnc(d.enc)){locked=true;return blank()}if(d&&d.v)return normalize(d)}catch(e){}return blank()}
 let S=load();
 let saveTimer;
-function saveNow(){clearTimeout(saveTimer);try{localStorage.setItem(STORE,JSON.stringify(S))}catch(e){toast('Could not save. Storage may be full.')}}
+let writing=Promise.resolve(),writeSeq=0,lastWritten=0;
+function store(str){try{localStorage.setItem(STORE,str)}catch(e){toast('Could not save. Storage may be full.')}}
+function saveNow(){clearTimeout(saveTimer);if(locked)return writing;const seq=++writeSeq;
+ if(LK){const p=encryptObj(S,LK,LSALT,LIT).then(enc=>{if(seq>lastWritten){lastWritten=seq;store(JSON.stringify({v:1,enc}))}}).catch(()=>toast('Could not encrypt and save.'));writing=writing.then(()=>p);return writing}
+ lastWritten=seq;store(JSON.stringify(S));return writing}
 let keepUndo=false;
 function dropUndo(){if(!undoSnap)return;undoSnap=null;const t=$('#toast');if(t&&t.querySelector('button'))t.classList.remove('show')}
 function save(){if(keepUndo)keepUndo=false;else dropUndo();clearTimeout(saveTimer);saveTimer=setTimeout(saveNow,120)}
@@ -336,7 +373,7 @@ function undo(){if(!undoSnap)return;S=normalize(JSON.parse(undoSnap));undoSnap=n
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 
 // tidy: drop tasks ticked off before today
-function tidyTodos(){const t=key();const old=S.todos.filter(x=>x.done&&key(new Date(x.doneAt))<t);if(old.length){old.forEach(x=>tomb(x.id));S.todos=S.todos.filter(x=>!old.includes(x));saveNow()}}
+function tidyTodos(){if(locked)return;const t=key();const old=S.todos.filter(x=>x.done&&key(new Date(x.doneAt))<t);if(old.length){old.forEach(x=>tomb(x.id));S.todos=S.todos.filter(x=>!old.includes(x));saveNow()}}
 tidyTodos();
 
 /* merge two data sets (for moving data between devices) */
@@ -398,7 +435,7 @@ function tReset(){T.running=false;T.left=dur(T.mode);T.total=0;saveT();wake(fals
 function tMode(m){T.mode=m;T.running=false;T.left=dur(m);T.total=0;saveT();wake(false);render()}
 function tSkip(){const next=T.mode==='work'?((T.round+1)%S.focus.every===0?'long':'short'):'work';if(T.mode==='work')T.round++;tMode(next)}
 function tComplete(){
- const was=T.mode,at=T.endAt||now(),late=now()-at>8000;
+ const was=T.mode,at=T.endAt||now(),late=now()-at>8000||!!T.alerted;T.alerted=false;
  if(was==='work'){S.sessions.push({id:uid(),at,mins:Math.max(1,Math.round((T.total||dur('work'))/6e4)),label:(T.label||'').trim(),u:at});T.round++;save()}
  const next=was==='work'?(T.round%S.focus.every===0?'long':'short'):'work';
  T.mode=next;T.left=dur(next);T.total=0;T.running=false;T.endAt=0;saveT();wake(false);
@@ -576,13 +613,14 @@ function updCounters(){for(const c of S.counters){const e=elapsed(c),p=split(e),
 function greet(){const h=new Date().getHours();return h<5?'Late night':h<12?'Good morning':h<18?'Good afternoon':'Good evening'}
 function render(){
  $$('#nav button[data-v]').forEach(b=>{const on=b.dataset.v===cur;b.classList.toggle('on',on);on?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')});
+ $('#lockTop').hidden=!LK;
  $('#title').innerHTML=cur==='today'?`<span class="sub">${greet()}</span>${fmtDate(new Date())}`:VIEWS[cur].t;
  const fn={today:vToday,habits:vHabits,focus:vFocus,journal:vJournal,since:vSince}[cur];
  $('#view').innerHTML=fn();
  if(cur==='journal'){$('#jText').value=(S.journal[curJ]||{}).text||'';updCount();renderJList()}
  updTimer();updCounters();
 }
-function go(v){if(!VIEWS[v])v='today';cur=v;try{localStorage.setItem(VSTORE,v)}catch(e){}
+function go(v){if(!VIEWS[v])v='today';cur=v;if(locked)return;try{localStorage.setItem(VSTORE,v)}catch(e){}
  if(location.hash!=='#'+v)history.replaceState(null,'','#'+v);render();window.scrollTo(0,0)}
 
 /* ---------- dialogs & toast ---------- */
@@ -635,15 +673,85 @@ function settingsDlg(){
  <div class="fld dsec"><span>Timer alerts</span><p>${np==='granted'?'Notifications are on for the focus timer.':np==='denied'?'Notifications are blocked. Turn them on in your browser or phone settings for this app.':np==='unsupported'?'This browser does not support notifications.':'Allow notifications so the timer can alert you when Keel is in the background.'}</p>
   ${np==='default'?'<button type="button" class="btn" data-a="notif">Allow notifications</button>':''}</div>
  ${installEvt?'<div class="fld dsec"><span>Install</span><p>Add Keel to your home screen or app launcher so it opens like a normal app.</p><button type="button" class="btn pri" data-a="install">Install Keel</button></div>':''}
+ <div class="fld dsec"><span>Passcode lock</span>${LK?`<p>On. Everything on this device, including your journal, is encrypted with your passcode, and so are backups you export.</p>
+  <label class="fld" style="margin-bottom:10px"><span>Lock again after leaving Keel</span>${delaySel(lockDelay)}</label>
+  <div class="row"><button type="button" class="btn" data-a="lockNow">Lock now</button><button type="button" class="btn" data-a="lockChange">Change passcode</button><button type="button" class="btn danger" data-a="lockOff">Turn off</button></div>`
+  :`<p>Ask for a passcode when Keel opens, and encrypt your journal and everything else on this device.</p><button type="button" class="btn" data-a="lockSetup">${I.lock} Set up passcode lock</button>`}</div>
  <div class="fld dsec"><span>Erase</span><p>Removes every habit, entry, counter, task and focus session from this device.</p><button type="button" class="btn danger" data-a="wipe">Erase all data</button></div>
  <div class="row end"><button type="button" class="btn pri" data-a="close">Done</button></div>`,()=>closeDlg())}
-function backupBlob(){const data=JSON.stringify({...S,exportedAt:now(),app:'keel'});return new Blob([data],{type:'application/json'})}
+async function backupBlob(){const base={v:1,app:'keel',exportedAt:now()};const body=LK?{...base,enc:await encryptObj(S,LK,LSALT,LIT)}:{...S,...base};return new Blob([JSON.stringify(body)],{type:'application/json'})}
 const backupName=()=>`keel-backup-${key()}.json`;
+
+/* ---------- passcode lock ---------- */
+function showLock(){document.body.classList.add('locked');$('#lock').hidden=false;$('#lockErr').textContent='';const i=$('#lockIn');i.value='';setTimeout(()=>i.focus(),50)}
+function hideLock(){document.body.classList.remove('locked');$('#lock').hidden=true}
+async function lockApp(){if(!LK||locked)return;flushJournal();saveNow();await writing;
+ locked=true;LK=null;LSALT=null;S=blank();undoSnap=null;if(dlg.open){onCancel=null;dlg.close()}
+ $('#view').innerHTML='';$('#toast').classList.remove('show');wake(false);document.title='Keel';showLock()}
+async function unlock(pass){const err=$('#lockErr'),btn=$('#lockGo');
+ if(now()<waitUntil){err.textContent=`Too many tries. Wait ${Math.ceil((waitUntil-now())/1000)} seconds.`;return}
+ let raw;try{raw=JSON.parse(localStorage.getItem(STORE))}catch(e){}
+ if(!raw||!okEnc(raw.enc)){locked=false;hideLock();S=load();go(cur);return}
+ btn.disabled=true;btn.textContent='Unlocking…';err.textContent='';
+ try{const salt=b64d(raw.enc.salt),key=await deriveKey(pass,salt,+raw.enc.it),d=await decryptObj(raw.enc,key);
+  LK=key;LSALT=salt;LIT=+raw.enc.it;S=normalize(d);lockDelay=[0,1,5,15].includes(+S.lockDelay)?+S.lockDelay:1;locked=false;fails=0;hiddenAt=0;hideLock();
+  applyTheme();tidyTodos();if(T.running&&now()>=T.endAt)tComplete();go(cur)}
+ catch(e){fails++;if(fails>=5){fails=0;waitUntil=now()+30000;err.textContent='Wrong passcode. Too many tries, wait 30 seconds.'}else err.textContent='Wrong passcode. Try again.';
+  const i=$('#lockIn');i.value='';i.focus()}
+ finally{btn.disabled=false;btn.textContent='Unlock'}}
+async function checkPass(pass){await writing;let raw;try{raw=JSON.parse(localStorage.getItem(STORE))}catch(e){}if(!raw||!okEnc(raw.enc))return false;
+ try{const k=await deriveKey(pass,b64d(raw.enc.salt),+raw.enc.it);await decryptObj(raw.enc,k);return true}catch(e){return false}}
+const DELAYS=[[0,'Immediately'],[1,'After 1 minute'],[5,'After 5 minutes'],[15,'After 15 minutes']];
+const delaySel=v=>`<select name="lockDelay">${DELAYS.map(([m,n])=>`<option value="${m}" ${m===v?'selected':''}>${n}</option>`).join('')}</select>`;
+async function busy(f,label,fn){const b=f.querySelector('button:not([type=button])'),t=b.textContent;b.disabled=true;b.textContent=label;try{return await fn()}finally{b.disabled=false;b.textContent=t}}
+function setErr(m){const e=$('#dErr');if(e)e.textContent=m}
+function lockSetupDlg(){openDlg(`<h2>Set a passcode</h2>
+ <p class="mute" style="margin-bottom:14px">Keel will ask for it when it opens, and everything it stores on this device, including your journal, will be encrypted with it.</p>
+ <label class="fld"><span>Passcode (at least 4 characters)</span><input type="password" name="p1" required minlength="4" autocomplete="new-password"></label>
+ <label class="fld"><span>Type it again</span><input type="password" name="p2" required autocomplete="new-password"></label>
+ <label class="fld"><span>Lock again after leaving Keel</span>${delaySel(1)}</label>
+ <p class="warn">If you forget this passcode, nobody can recover your data, not even with a backup made while the lock is on.</p>
+ <p class="err" id="dErr"></p>
+ <div class="row end"><button type="button" class="btn ghost" data-a="close">Cancel</button><button class="btn pri">Turn on lock</button></div>`,
+ async(fd,f)=>{const p1=fd.get('p1')||'',p2=fd.get('p2')||'';if(p1.length<4)return setErr('Use at least 4 characters.');if(p1!==p2)return setErr("The two passcodes don't match.");
+  await busy(f,'Encrypting…',async()=>{const salt=crypto.getRandomValues(new Uint8Array(16));const k=await deriveKey(p1,salt,ITER);
+   LK=k;LSALT=salt;LIT=ITER;S.lockDelay=+fd.get('lockDelay');lockDelay=S.lockDelay;await saveNow()});
+  closeDlg();render();toast('Passcode lock is on. Your data is encrypted.')})}
+function lockChangeDlg(){openDlg(`<h2>Change passcode</h2>
+ <label class="fld"><span>Current passcode</span><input type="password" name="old" required autocomplete="current-password"></label>
+ <label class="fld"><span>New passcode (at least 4 characters)</span><input type="password" name="p1" required minlength="4" autocomplete="new-password"></label>
+ <label class="fld"><span>Type the new one again</span><input type="password" name="p2" required autocomplete="new-password"></label>
+ <p class="err" id="dErr"></p>
+ <div class="row end"><button type="button" class="btn ghost" data-a="close">Cancel</button><button class="btn pri">Change passcode</button></div>`,
+ async(fd,f)=>{const p1=fd.get('p1')||'',p2=fd.get('p2')||'';if(p1.length<4)return setErr('Use at least 4 characters.');if(p1!==p2)return setErr("The new passcodes don't match.");
+  const ok=await busy(f,'Checking…',async()=>{if(!await checkPass(fd.get('old')||''))return false;const salt=crypto.getRandomValues(new Uint8Array(16));
+   LK=await deriveKey(p1,salt,ITER);LSALT=salt;LIT=ITER;await saveNow();return true});
+  if(!ok)return setErr('Current passcode is wrong.');closeDlg();toast('Passcode changed.')})}
+function lockOffDlg(){openDlg(`<h2>Turn off the lock?</h2>
+ <p class="mute" style="margin-bottom:14px">Keel will open without a passcode and your data will be stored unencrypted on this device.</p>
+ <label class="fld"><span>Current passcode</span><input type="password" name="old" required autocomplete="current-password"></label>
+ <p class="err" id="dErr"></p>
+ <div class="row end"><button type="button" class="btn ghost" data-a="close">Cancel</button><button class="btn danger">Turn off lock</button></div>`,
+ async(fd,f)=>{const ok=await busy(f,'Checking…',async()=>{if(!await checkPass(fd.get('old')||''))return false;LK=null;LSALT=null;await saveNow();return true});
+  if(!ok)return setErr('Passcode is wrong.');closeDlg();render();toast('Lock turned off.')})}
+function importLockedDlg(d){openDlg(`<h2>This backup is locked</h2>
+ <p class="mute" style="margin-bottom:14px">It was made while the passcode lock was on${d.exportedAt?' ('+fmtDT(d.exportedAt)+')':''}. Enter the passcode that was in use then.</p>
+ <label class="fld"><span>Backup passcode</span><input type="password" name="old" required autocomplete="off"></label>
+ <p class="err" id="dErr"></p>
+ <div class="row end"><button type="button" class="btn ghost" data-a="close">Cancel</button><button class="btn pri">Unlock and merge</button></div>`,
+ async(fd,f)=>{const inner=await busy(f,'Decrypting…',async()=>{try{return await decryptObj(d.enc,await deriveKey(fd.get('old')||'',b64d(d.enc.salt),+d.enc.it))}catch(e){return null}});
+  if(!inner)return setErr('That passcode does not open this backup.');
+  if(!inner.v||!Array.isArray(inner.habits))return setErr('This backup is damaged.');
+  doMerge(inner,d.exportedAt)})}
+function doMerge(d,at){snap();S=merge(S,normalize(d));save();saveNow();closeDlg();render();toast(`Merged backup${at?' from '+fmtDT(at):''}`,'Undo',undo)}
 
 /* ---------- actions ---------- */
 const A={
  go:b=>go(b.dataset.v),
  settings:()=>settingsDlg(),
+ lockNow:()=>lockApp(),lockSetup:()=>lockSetupDlg(),lockChange:()=>lockChangeDlg(),lockOff:()=>lockOffDlg(),
+ forgot:async()=>{if(!await confirmBox('Erase Keel and start over?',"Without the passcode the data on this device can't be decrypted, so the only way forward is to delete it. If your other device still has your data, you can send a backup from it afterwards.",'Erase and start over',true))return;
+  try{localStorage.removeItem(STORE)}catch(e){}LK=null;LSALT=null;locked=false;S=blank();hideLock();applyTheme();go(cur);toast('Keel was reset.')},
  close:()=>{const c=closeDlg();c&&c()},
  tog:b=>toggleHabit(b.dataset.id,b.dataset.k),
  newHabit:()=>habitDlg(),editHabit:b=>habitDlg(b.dataset.id),
@@ -669,9 +777,9 @@ const A={
  resetCounter:b=>resetDlg(b.dataset.id),
  delCounter:async b=>{const c=S.counters.find(x=>x.id===b.dataset.id);closeDlg();if(!await confirmBox('Delete this counter?',`"${c.name}" and its history will be removed.`,'Delete',true))return;
   snap();S.counters=S.counters.filter(x=>x!==c);tomb(c.id);save();render();toast('Counter deleted','Undo',undo)},
- export:()=>{const a=document.createElement('a');a.href=URL.createObjectURL(backupBlob());a.download=backupName();document.body.appendChild(a);a.click();
-  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);S.lastExport=now();save();toast('Backup saved to your downloads')},
- shareBk:async()=>{try{await navigator.share({files:[new File([backupBlob()],backupName(),{type:'application/json'})],title:'Keel backup'});S.lastExport=now();save()}catch(e){}},
+ export:async()=>{const a=document.createElement('a');a.href=URL.createObjectURL(await backupBlob());a.download=backupName();document.body.appendChild(a);a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);S.lastExport=now();save();toast(LK?'Encrypted backup saved to your downloads':'Backup saved to your downloads')},
+ shareBk:async()=>{try{await navigator.share({files:[new File([await backupBlob()],backupName(),{type:'application/json'})],title:'Keel backup'});S.lastExport=now();save()}catch(e){}},
  notif:async()=>{try{await Notification.requestPermission()}catch(e){}closeDlg();settingsDlg()},
  install:async()=>{if(!installEvt)return;installEvt.prompt();try{await installEvt.userChoice}catch(e){}installEvt=null;closeDlg()},
  wipe:async()=>{closeDlg();if(!await confirmBox('Erase everything?','All habits, journal entries, counters, tasks and focus history on this device will be deleted. Export a backup first if you might want them.','Erase all',true))return;
@@ -681,6 +789,7 @@ const A={
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b||b.disabled)return;const f=A[b.dataset.a];if(f){e.preventDefault();f(b,e)}});
 document.addEventListener('submit',e=>{const f=e.target;e.preventDefault();
  if(f.id==='todoForm'){const t=(new FormData(f).get('t')||'').trim();if(!t)return;S.todos.push({id:uid(),text:t,done:false,doneAt:0,u:now()});save();render();$('#todoForm input')?.focus()}
+ else if(f.id==='lockForm'){const v=$('#lockIn').value;if(v)unlock(v)}
  else if(f.id==='dlgForm'&&onSubmit)onSubmit(new FormData(f),f)});
 let jTimer;
 document.addEventListener('input',e=>{const t=e.target;
@@ -693,29 +802,38 @@ document.addEventListener('change',e=>{const t=e.target;
  else if(t.dataset.f){const k=t.dataset.f;if(t.type==='checkbox')S.focus[k]=t.checked;else{const lim={work:[1,240],short:[1,60],long:[1,120],every:[1,12]}[k];S.focus[k]=clamp(Math.round(+t.value)||lim[0],...lim);t.value=S.focus[k]}
   if(!T.running&&!T.total)T.left=dur(T.mode);saveT();save();updTimer()}
  else if(t.name==='theme'){S.theme=t.value;save();applyTheme()}
- else if(t.id==='importF'&&t.files[0]){const file=t.files[0];file.text().then(txt=>{const d=JSON.parse(txt);if(!d||!d.v||!Array.isArray(d.habits))throw 0;
-  snap();S=merge(S,normalize(d));save();saveNow();closeDlg();render();toast(`Merged backup${d.exportedAt?' from '+fmtDT(d.exportedAt):''}`,'Undo',undo)}).catch(()=>toast('That file is not a Keel backup'))}});
+ else if(t.name==='lockDelay'&&LK){lockDelay=+t.value;S.lockDelay=lockDelay;save()}
+ else if(t.id==='importF'&&t.files[0]){const file=t.files[0];file.text().then(txt=>{const d=JSON.parse(txt);if(d&&okEnc(d.enc)){importLockedDlg(d);return}if(!d||!d.v||!Array.isArray(d.habits))throw 0;doMerge(d,d.exportedAt)}).catch(()=>toast('That file is not a Keel backup'))}});
 document.addEventListener('toggle',e=>{const d=e.target;if(d.dataset&&d.dataset.id){d.open?openDetails.add(d.dataset.id):openDetails.delete(d.dataset.id)}},true);
-document.addEventListener('keydown',e=>{if(e.key===' '&&cur==='focus'&&!e.target.closest('input,textarea,button,select,dialog')){e.preventDefault();T.running?tPause():tStart()}});
+document.addEventListener('keydown',e=>{if(e.key===' '&&!locked&&cur==='focus'&&!e.target.closest('input,textarea,button,select,dialog')){e.preventDefault();T.running?tPause():tStart()}});
 addEventListener('hashchange',()=>{const v=location.hash.slice(1);if(VIEWS[v]&&v!==cur)go(v)});
 addEventListener('pagehide',saveNow);
 let lastDay=key();
-function tick(){if(T.running&&now()>=T.endAt)tComplete();
+function lockedAlert(){T.alerted=true;saveT();if(S.focus.sound!==false)chime();try{navigator.vibrate&&navigator.vibrate([220,120,220])}catch(e){}
+ if(document.hidden&&'Notification' in window&&Notification.permission==='granted'&&navigator.serviceWorker)
+  navigator.serviceWorker.ready.then(r=>r.showNotification('Keel',{body:'Your timer is done.',tag:'keel-timer',renotify:true,icon:'icon-192.png'})).catch(()=>{})}
+function tick(){if(locked){if(T.running&&now()>=T.endAt&&!T.alerted)lockedAlert();return}
+ if(T.running&&now()>=T.endAt)tComplete();
  if(key()!==lastDay){lastDay=key();tidyTodos();if(curJ<lastDay&&cur!=='journal')curJ=lastDay;render();return}
  updTimer();if(cur==='since'||cur==='today')updCounters()}
 setInterval(tick,500);
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveNow();else{tick();if(T.running)wake(true)}});
+function flushJournal(){const ta=$('#jText');if(!ta||locked)return;clearTimeout(jTimer);if(ta.value!==((S.journal[curJ]||{}).text||''))setEntry(curJ,{text:ta.value})}
+document.addEventListener('visibilitychange',()=>{
+ if(document.visibilityState==='hidden'){flushJournal();saveNow();hiddenAt=now();if(LK&&lockDelay===0)lockApp()}
+ else{if(LK&&!locked&&hiddenAt&&now()-hiddenAt>=lockDelay*6e4){lockApp();return}hiddenAt=0;tick();if(T.running&&!locked)wake(true)}});
+addEventListener('pagehide',flushJournal);
 
-function applyTheme(){const r=document.documentElement;if(S.theme==='system')r.removeAttribute('data-theme');else r.dataset.theme=S.theme;
+function applyTheme(){const r=document.documentElement;let th=S.theme;try{if(locked)th=localStorage.getItem('keel:theme')||'system';else localStorage.setItem('keel:theme',th)}catch(e){}
+ if(th==='light'||th==='dark')r.dataset.theme=th;else r.removeAttribute('data-theme');
  requestAnimationFrame(()=>{const m=$('meta[name=theme-color]');if(m)m.content=getComputedStyle(document.body).backgroundColor})}
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',applyTheme);
 
 /* ---------- boot ---------- */
 document.addEventListener('pointerdown',unlockAudio,{once:true});
 $('#nav').innerHTML=`<div class="brand"><img src="icon-192.png" alt="Keel"></div>`+Object.keys(VIEWS).map(v=>`<button data-a="go" data-v="${v}"><span class="ic">${I[v]}</span>${VIEWS[v].n}</button>`).join('');
-$('#gear').innerHTML=I.gear;
+$('#gear').innerHTML=I.gear;$('#lockTop').innerHTML=I.lock;
 applyTheme();
-if(T.running&&now()>=T.endAt)tComplete();
+if(locked)showLock();else if(T.running&&now()>=T.endAt)tComplete();
 go(cur);
 if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register('sw.js').catch(()=>{});
 }

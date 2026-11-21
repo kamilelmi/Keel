@@ -57,6 +57,18 @@ Importing **merges** the backup with what's already there, so habits, ticks, cou
 
 Exporting a backup now and then is also a good safety net in case you clear your browser data.
 
+## Passcode lock
+
+Go to **Settings → Passcode lock → Set up passcode lock**. Once it's on:
+
+- Keel asks for the passcode when it opens, and locks again after you leave it. You choose when: immediately, or after 1, 5 or 15 minutes. The padlock at the top locks it straight away.
+- Everything Keel stores on the device is encrypted with AES-256-GCM, using a key derived from your passcode (PBKDF2-SHA256, 600,000 rounds). The passcode itself is never stored.
+- Exported backups are encrypted too. Importing one asks for the passcode that was in use when it was made.
+- Five wrong attempts in a row trigger a 30-second wait.
+- **If you forget the passcode, the data can't be recovered.** "Forgot passcode?" only lets you erase and start over. If your other device still has your data, you can then send a backup from it.
+
+The one thing kept outside the encryption is the running focus timer's countdown and its label, so the timer can still go off while Keel is locked.
+
 ## Updating the app
 
 Edit `index.html`, change `VERSION` in `sw.js` (e.g. `keel-v2`), and push or upload again. Installed copies pick up the new version the next time they're opened online. Your data isn't affected.
