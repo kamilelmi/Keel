@@ -99,7 +99,8 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--acc);outline-off
 .tick{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;border:2.5px solid var(--c);flex:none;transition:background .15s}
 .tick svg{width:18px;height:18px;stroke:#fff;stroke-width:3;opacity:0}
 .done .tick{background:var(--c)}.done .tick svg{opacity:1}
-.hname{flex:1;font-weight:600;font-size:16px}
+.hname{flex:1;font-weight:600;font-size:16px;overflow-wrap:anywhere}
+.hcard h3,.scard h3,.mini span{overflow-wrap:anywhere}
 .done .hname{color:var(--mute)}
 .hmeta{font-size:13px;color:var(--mute);white-space:nowrap}
 .addrow{display:flex;gap:8px;margin-bottom:6px}
@@ -162,7 +163,8 @@ details[open]>summary::before{transform:rotate(45deg)}
 .ctl .ibtn{width:52px;height:52px;border-radius:50%;background:var(--card2)}
 .focus .lbl{max-width:420px}
 .bars{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;align-items:end;height:140px;margin-top:8px}
-.bar{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px;height:100%;font-size:12px;color:var(--mute);font-weight:600}
+.bar{display:grid;grid-template-rows:minmax(0,1fr) auto;justify-items:center;gap:6px;height:100%;font-size:12px;color:var(--mute);font-weight:600}
+.bar u{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;width:100%;height:100%;text-decoration:none}
 .bar i{display:block;width:100%;max-width:34px;border-radius:8px 8px 3px 3px;background:var(--acc);min-height:3px}
 .bar.t i{background:var(--ink)}
 .bar em{font-style:normal;color:var(--ink);font-variant-numeric:tabular-nums}
@@ -307,21 +309,35 @@ const MODE={work:{n:'Focus',c:'var(--acc)'},short:{n:'Short break',c:'#1f9e8f'},
 const STORE='keel:data',TSTORE='keel:timer',VSTORE='keel:view';
 const blank=()=>({v:1,habits:[],journal:{},counters:[],todos:[],sessions:[],deleted:{},
  focus:{work:25,short:5,long:15,every:4,sound:true,auto:false,awake:true},theme:'system',lastExport:0});
-function normalize(d){const b=blank();return{...b,...d,focus:{...b.focus,...(d.focus||{})},deleted:d.deleted||{},journal:d.journal||{},
- habits:(d.habits||[]).map(h=>({log:{},days:[0,1,2,3,4,5,6],...h})),counters:(d.counters||[]).map(c=>({resets:[],...c})),todos:d.todos||[],sessions:d.sessions||[]}}
+const okId=x=>typeof x==='string'&&/^[\w-]{1,64}$/.test(x)?x:uid();
+const okKey=k=>/^\d{4}-\d\d-\d\d$/.test(k);
+const okCol=c=>/^#[0-9a-f]{3,8}$/i.test(c)?c:COLORS[0];
+const okNum=(x,d=0)=>Number.isFinite(+x)?+x:d;
+const arr=x=>Array.isArray(x)?x:[];
+function normalize(d){const b=blank();
+ const journal={};for(const k in (d.journal||{})){const e=d.journal[k];if(okKey(k)&&e&&typeof e==='object'){const m=Math.round(okNum(e.mood));journal[k]={text:String(e.text||''),mood:m>=1&&m<=5?m:0,u:okNum(e.u)}}}
+ const log=l=>{const o={};for(const k in (l||{}))if(okKey(k))o[k]=okNum(l[k]);return o};
+ return{...b,...d,focus:{...b.focus,...(d.focus||{})},deleted:d.deleted&&typeof d.deleted==='object'?d.deleted:{},journal,
+ habits:arr(d.habits).filter(h=>h&&h.name).map(h=>{const days=arr(h.days).map(Number).filter(x=>x>=0&&x<=6);return{...h,id:okId(h.id),name:String(h.name),color:okCol(h.color),days:days.length?days:[0,1,2,3,4,5,6],log:log(h.log),created:okKey(h.created)?h.created:key(),u:okNum(h.u)}}),
+ counters:arr(d.counters).filter(c=>c&&c.name).map(c=>({...c,id:okId(c.id),name:String(c.name),start:Math.min(okNum(c.start,Date.now()),Date.now()),u:okNum(c.u),resets:arr(c.resets).filter(r=>r).map(r=>({at:okNum(r.at),len:okNum(r.len),note:String(r.note||'')}))})),
+ todos:arr(d.todos).filter(x=>x&&x.text).map(x=>({...x,id:okId(x.id),text:String(x.text),done:!!x.done,doneAt:okNum(x.doneAt),u:okNum(x.u)})),
+ sessions:arr(d.sessions).filter(x=>x&&x.at).map(x=>({...x,id:okId(x.id),at:okNum(x.at),mins:okNum(x.mins),label:String(x.label||''),u:okNum(x.u)}))}}
 function load(){try{const d=JSON.parse(localStorage.getItem(STORE));if(d&&d.v)return normalize(d)}catch(e){}return blank()}
 let S=load();
 let saveTimer;
 function saveNow(){clearTimeout(saveTimer);try{localStorage.setItem(STORE,JSON.stringify(S))}catch(e){toast('Could not save. Storage may be full.')}}
-function save(){clearTimeout(saveTimer);saveTimer=setTimeout(saveNow,120)}
+let keepUndo=false;
+function dropUndo(){if(!undoSnap)return;undoSnap=null;const t=$('#toast');if(t&&t.querySelector('button'))t.classList.remove('show')}
+function save(){if(keepUndo)keepUndo=false;else dropUndo();clearTimeout(saveTimer);saveTimer=setTimeout(saveNow,120)}
 const tomb=id=>{S.deleted[id]=now()};
 let undoSnap=null;
-const snap=()=>{undoSnap=JSON.stringify(S)};
-function undo(){if(!undoSnap)return;S=normalize(JSON.parse(undoSnap));undoSnap=null;saveNow();render()}
+const snap=()=>{undoSnap=JSON.stringify(S);keepUndo=true};
+function undo(){if(!undoSnap)return;S=normalize(JSON.parse(undoSnap));undoSnap=null;keepUndo=false;saveNow();render()}
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 
 // tidy: drop tasks ticked off before today
-(()=>{const t=key();const old=S.todos.filter(x=>x.done&&key(new Date(x.doneAt))<t);if(old.length){old.forEach(x=>tomb(x.id));S.todos=S.todos.filter(x=>!old.includes(x));saveNow()}})();
+function tidyTodos(){const t=key();const old=S.todos.filter(x=>x.done&&key(new Date(x.doneAt))<t);if(old.length){old.forEach(x=>tomb(x.id));S.todos=S.todos.filter(x=>!old.includes(x));saveNow()}}
+tidyTodos();
 
 /* merge two data sets (for moving data between devices) */
 function merge(a,b){
@@ -376,29 +392,30 @@ function tStart(){unlockAudio();
  if('Notification' in window&&Notification.permission==='default'&&!S.askedNotif){S.askedNotif=1;save();try{Notification.requestPermission()}catch(e){}}
  const l=$('#tLabel');if(l)T.label=l.value;
  if(T.left<=0)T.left=dur(T.mode);
- T.endAt=now()+T.left;T.running=true;saveT();wake(true);updTimer()}
+ T.total=T.total&&T.left<T.total?T.total:T.left;T.endAt=now()+T.left;T.running=true;saveT();wake(true);updTimer()}
 function tPause(){T.left=Math.max(0,T.endAt-now());T.running=false;saveT();wake(false);updTimer()}
-function tReset(){T.running=false;T.left=dur(T.mode);saveT();wake(false);updTimer()}
-function tMode(m){T.mode=m;T.running=false;T.left=dur(m);saveT();wake(false);render()}
+function tReset(){T.running=false;T.left=dur(T.mode);T.total=0;saveT();wake(false);updTimer()}
+function tMode(m){T.mode=m;T.running=false;T.left=dur(m);T.total=0;saveT();wake(false);render()}
 function tSkip(){const next=T.mode==='work'?((T.round+1)%S.focus.every===0?'long':'short'):'work';if(T.mode==='work')T.round++;tMode(next)}
 function tComplete(){
  const was=T.mode,at=T.endAt||now(),late=now()-at>8000;
- if(was==='work'){S.sessions.push({id:uid(),at,mins:+S.focus.work,label:(T.label||'').trim(),u:at});T.round++;save()}
+ if(was==='work'){S.sessions.push({id:uid(),at,mins:Math.max(1,Math.round((T.total||dur('work'))/6e4)),label:(T.label||'').trim(),u:at});T.round++;save()}
  const next=was==='work'?(T.round%S.focus.every===0?'long':'short'):'work';
- T.mode=next;T.left=dur(next);T.running=false;T.endAt=0;saveT();wake(false);
+ T.mode=next;T.left=dur(next);T.total=0;T.running=false;T.endAt=0;saveT();wake(false);
  const msg=was==='work'?`Focus session done${late?' at '+fmtTime(at):''}. Time for a ${MODE[next].n.toLowerCase()}.`:'Break over. Ready to focus?';
  if(!late){if(S.focus.sound)chime();try{if(navigator.vibrate&&(!navigator.userActivation||navigator.userActivation.hasBeenActive))navigator.vibrate([220,120,220])}catch(e){}
   if(document.hidden&&'Notification' in window&&Notification.permission==='granted'&&navigator.serviceWorker)
    navigator.serviceWorker.ready.then(r=>r.showNotification('Keel',{body:msg,tag:'keel-timer',renotify:true,icon:'icon-192.png',badge:'icon-192.png'})).catch(()=>{});
   if(S.focus.auto)tStart()}
  toast(msg);
- if(cur==='focus'||cur==='today')render();
+ const typing=document.activeElement&&document.activeElement.matches('input,textarea');
+ if(cur==='focus'||(cur==='today'&&!typing))render();else updTimer();
 }
 function updTimer(){
- const l=tLeft(),tot=dur(T.mode),p=1-l/tot;
+ const l=tLeft(),tot=T.total||dur(T.mode),p=1-l/tot;
  const big=$('#tLeft');if(big){big.textContent=mmss(l);
   const c=$('#prog');if(c){const C=2*Math.PI*96;c.style.strokeDasharray=C;c.style.strokeDashoffset=C*(1-clamp(p,0,1))}
-  const g=$('#tGo');if(g){g.innerHTML=T.running?I.pause:I.play;g.setAttribute('aria-label',T.running?'Pause':'Start')}
+  const g=$('#tGo'),st=T.running?'run':'stop';if(g&&g.dataset.s!==st){g.dataset.s=st;g.innerHTML=T.running?I.pause:I.play;g.setAttribute('aria-label',T.running?'Pause':'Start')}
   const sub=$('#tSub');if(sub)sub.textContent=T.mode==='work'?`Round ${T.round%S.focus.every+1} of ${S.focus.every}`:MODE[T.mode].n}
  const q=$('#qT');if(q)q.textContent=mmss(l);
  document.title=T.running?`${mmss(l)} · ${MODE[T.mode].n}`:'Keel';
@@ -409,7 +426,7 @@ const focusMins=k=>S.sessions.filter(s=>key(new Date(s.at))===k).reduce((a,s)=>a
 const VIEWS={today:{t:'Today',n:'Today'},habits:{t:'Habits',n:'Habits'},focus:{t:'Focus',n:'Focus'},journal:{t:'Journal',n:'Journal'},since:{t:'Days since',n:'Days since'}};
 let cur=location.hash.slice(1);
 if(!VIEWS[cur]){try{cur=localStorage.getItem(VSTORE)}catch(e){}if(!VIEWS[cur])cur='today'}
-let curJ=key();
+let curJ=key(),jLimit=60;
 const openDetails=new Set();
 
 function hrow(h,k){const d=isDone(h,k),st=streak(h);
@@ -455,9 +472,9 @@ function vToday(){
 }
 
 function heat(h){
- const t=new Date(),tk=key(t),mon=addDays(t,-((t.getDay()+6)%7)),start=addDays(mon,-17*7);let out='';
+ const fk=firstKey(h),t=new Date(),tk=key(t),mon=addDays(t,-((t.getDay()+6)%7)),start=addDays(mon,-17*7);let out='';
  for(let i=0;i<18*7;i++){const d=addDays(start,i),k=key(d);
-  const cls=k>tk?'f':isDone(h,k)?'y':sched(h,d)&&k>=firstKey(h)?'s':'';
+  const cls=k>tk?'f':isDone(h,k)?'y':sched(h,d)&&k>=fk?'s':'';
   out+=`<b class="${cls}" title="${fmtDate(d,{day:'numeric',month:'short'})}${cls==='y'?' · done':''}"></b>`}
  return out}
 function vHabits(){
@@ -490,7 +507,7 @@ function vFocus(){
   <p class="small mute">Space bar starts and pauses on a keyboard. Keep Keel open for an on-time alarm; if your phone puts it to sleep, the session is still logged when you come back.</p>
  </section>
  <div class="stack-g"><section class="card"><div class="ch"><h2>Last 7 days</h2><span class="mute small">${week} min this week · ${all<60?all+' min':(all/60).toFixed(1)+' h'} total</span></div>
-  <div class="bars">${days.map((d,i)=>`<div class="bar ${key(d)===tk?'t':''}"><em>${mins[i]||''}</em><i style="height:${mins[i]/mx*100}%"></i>${WD[d.getDay()]}</div>`).join('')}</div></section>
+  <div class="bars">${days.map((d,i)=>`<div class="bar ${key(d)===tk?'t':''}"><u><em>${mins[i]||''}</em><i style="height:calc((100% - 22px) * ${(mins[i]/mx).toFixed(3)})"></i></u>${WD[d.getDay()]}</div>`).join('')}</div></section>
  <section class="card"><div class="ch"><h2>Today's sessions</h2><span class="mute small">${focusMins(tk)} min</span></div>
   ${todayS.length?todayS.map(s=>`<div class="sess"><time>${fmtTime(s.at)}</time><span>${esc(s.label)||'<span class="mute">Untitled</span>'}</span><b class="num-t">${s.mins} min</b></div>`).join(''):'<p class="empty">Finished focus sessions show up here.</p>'}</section>
  <section class="card"><details data-id="fset" ${openDetails.has('fset')?'open':''}><summary>Timer settings</summary>
@@ -523,10 +540,11 @@ function vJournal(){
 }
 function renderJList(){const el=$('#jList');if(!el)return;const q=($('#jSearch')?.value||'').trim().toLowerCase();
  const ks=Object.keys(S.journal).sort().reverse().filter(k=>!q||(S.journal[k].text||'').toLowerCase().includes(q));
- el.innerHTML=ks.length?ks.slice(0,q?300:60).map(k=>{const e=S.journal[k],m=e.mood?MOODS[e.mood-1]:null,d=fromKey(k);
+ el.innerHTML=ks.length?ks.slice(0,jLimit).map(k=>{const e=S.journal[k],m=e.mood?MOODS[e.mood-1]:null,d=fromKey(k);
   return `<button class="jent ${k===curJ?'cur':''}" data-a="openJ" data-k="${k}"><span class="jd"><b>${d.getDate()}</b>${d.toLocaleDateString(undefined,{month:'short'})}</span>
   <span class="jb"><span class="jt">${d.toLocaleDateString(undefined,{weekday:'long'})}${d.getFullYear()!==new Date().getFullYear()?' '+d.getFullYear():''}${m?`<i class="md" style="--m:${m.c}"></i>${m.n}`:''}</span><span class="jx">${esc((e.text||'').slice(0,220))||'<span class="mute">Mood only</span>'}</span></span></button>`}).join('')
-  :`<p class="empty">${q?'No entries match that search.':'Your entries will appear here.'}</p>`}
+  :`<p class="empty">${q?'No entries match that search.':'Your entries will appear here.'}</p>`;
+ if(ks.length>jLimit)el.innerHTML+=`<button class="btn ghost" data-a="jmore" style="width:100%;margin-top:8px">Show ${Math.min(60,ks.length-jLimit)} more</button>`}
 function setEntry(k,patch){const e={...(S.journal[k]||{}),...patch,u:now()};if(!e.text&&!e.mood){if(S.journal[k]){delete S.journal[k];S.deleted['j:'+k]=now()}}else S.journal[k]=e;save()}
 function updCount(){const t=($('#jText')?.value||'').trim();const n=t?t.split(/\s+/).length:0;const c=$('#jCount');if(c)c.textContent=plural(n,'word')}
 
@@ -540,7 +558,7 @@ function vSince(){
   <div class="dn"><span class="num" data-days="${c.id}">0</span><span class="dl" data-dl="${c.id}">days</span></div>
   <div class="hms" data-hms="${c.id}"></div>
   <div class="ms"><div class="prog"><i data-bar="${c.id}"></i></div><span class="small mute" data-next="${c.id}"></span></div>
-  <dl class="meta"><div><dt>Since</dt><dd>${new Date(c.start).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'2-digit'})}</dd></div>
+  <dl class="meta"><div><dt>Since</dt><dd>${new Date(c.start).toLocaleDateString(undefined,new Date(c.start).getFullYear()===new Date().getFullYear()?{day:'numeric',month:'short'}:{day:'numeric',month:'short',year:'numeric'})}</dd></div>
    <div><dt>Best run</dt><dd data-best="${c.id}"></dd></div><div><dt>Resets</dt><dd>${c.resets.length}</dd></div></dl>
   <button class="btn" data-a="resetCounter" data-id="${c.id}" style="width:100%">${I.reset} I slipped, reset</button>
   ${c.resets.length?`<details class="hist" data-id="c-${c.id}" ${openDetails.has('c-'+c.id)?'open':''}><summary>Past runs</summary><div class="rlist">${[...c.resets].reverse().slice(0,30).map(r=>`<div><span>${fmtDT(r.at)}${r.note?`<em>${esc(r.note)}</em>`:''}</span><b class="num-t">${shortDur(r.len)}</b></div>`).join('')}</div></details>`:''}
@@ -569,17 +587,17 @@ function go(v){if(!VIEWS[v])v='today';cur=v;try{localStorage.setItem(VSTORE,v)}c
 
 /* ---------- dialogs & toast ---------- */
 const dlg=$('#dlg'),dform=$('#dlgForm');let onSubmit=null,onCancel=null;
-function openDlg(html,submit,cancel){dform.innerHTML=html;onSubmit=submit;onCancel=cancel||null;dlg.showModal()}
+function openDlg(html,submit,cancel){if(dlg.open){onCancel=null;dlg.close()}dform.innerHTML=html;onSubmit=submit;onCancel=cancel||null;dlg.showModal()}
 function closeDlg(){const c=onCancel;onSubmit=null;onCancel=null;if(dlg.open)dlg.close();return c}
-dlg.addEventListener('close',()=>{const c=onCancel;onSubmit=null;onCancel=null;c&&c()});
+dlg.addEventListener('close',()=>{if(dlg.open)return;const c=onCancel;onSubmit=null;onCancel=null;c&&c()});
 dlg.addEventListener('click',e=>{if(e.target!==dlg)return;const r=dlg.getBoundingClientRect();
  if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dlg.close()});
 function confirmBox(title,body,ok,danger){return new Promise(res=>{openDlg(`<h2>${esc(title)}</h2><p class="mute">${esc(body)}</p>
  <div class="row end"><button type="button" class="btn ghost" data-a="close">Cancel</button><button class="btn ${danger?'danger':'pri'}">${esc(ok)}</button></div>`,()=>{onCancel=null;dlg.close();res(true)},()=>res(false))})}
 let toastTimer;
-function toast(msg,label,fn){const t=$('#toast');t.innerHTML=`<span>${esc(msg)}</span>${label?`<button type="button">${esc(label)}</button>`:''}`;
+function toast(msg,label,fn){const t=$('#toast');if(!label)undoSnap=null;t.innerHTML=`<span>${esc(msg)}</span>${label?`<button type="button">${esc(label)}</button>`:''}`;
  if(label)t.querySelector('button').onclick=()=>{fn();t.classList.remove('show')};
- t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),label?6500:3200)}
+ t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>{t.classList.remove('show');if(label)undoSnap=null},label?6500:3200)}
 
 function habitDlg(id){const h=S.habits.find(x=>x.id===id);const col=h?h.color:COLORS[S.habits.length%COLORS.length];const days=h?h.days:[0,1,2,3,4,5,6];
  openDlg(`<h2>${h?'Edit habit':'New habit'}</h2>
@@ -638,10 +656,11 @@ const A={
  clearDone:()=>{snap();S.todos.filter(t=>t.done).forEach(t=>tomb(t.id));S.todos=S.todos.filter(t=>!t.done);save();render();toast('Cleared finished tasks','Undo',undo)},
  qmood:b=>{const k=key(),m=+b.dataset.m,e=S.journal[k]||{};setEntry(k,{mood:e.mood===m?0:m});render()},
  tgo:()=>{tStart();if(cur==='today')render()},tpause:()=>{tPause();if(cur==='today')render()},
- ttoggle:()=>T.running?tPause():tStart(),treset:()=>tReset(),tskip:()=>tSkip(),tmode:b=>tMode(b.dataset.m),
+ ttoggle:()=>T.running?tPause():tStart(),treset:()=>tReset(),tskip:()=>tSkip(),tmode:async b=>{const m=b.dataset.m;if(m===T.mode)return;if(T.running&&!await confirmBox('Stop the running timer?','Switching mode resets the current countdown.','Switch',false))return;tMode(m)},
  jprev:()=>{curJ=key(addDays(fromKey(curJ),-1));render()},
  jnext:()=>{const n=key(addDays(fromKey(curJ),1));if(n<=key()){curJ=n;render()}},
  jtoday:()=>{curJ=key();render()},
+ jmore:()=>{jLimit+=60;renderJList()},
  openJ:b=>{curJ=b.dataset.k;render();window.scrollTo({top:0,behavior:'smooth'})},
  mood:b=>{const m=+b.dataset.m,e=S.journal[curJ]||{};setEntry(curJ,{mood:e.mood===m?0:m,text:$('#jText').value});render()},
  prompt:b=>{const ta=$('#jText'),v=ta.value,ins=(v&&!v.endsWith('\n')?'\n\n':'')+b.dataset.p+'\n';ta.value=v+ins;ta.focus();ta.selectionStart=ta.selectionEnd=ta.value.length;setEntry(curJ,{text:ta.value});updCount()},
@@ -656,7 +675,7 @@ const A={
  notif:async()=>{try{await Notification.requestPermission()}catch(e){}closeDlg();settingsDlg()},
  install:async()=>{if(!installEvt)return;installEvt.prompt();try{await installEvt.userChoice}catch(e){}installEvt=null;closeDlg()},
  wipe:async()=>{closeDlg();if(!await confirmBox('Erase everything?','All habits, journal entries, counters, tasks and focus history on this device will be deleted. Export a backup first if you might want them.','Erase all',true))return;
-  snap();const th=S.theme;S=blank();S.theme=th;saveNow();render();toast('All data erased','Undo',undo)}
+  snap();const th=S.theme;S=blank();S.theme=th;save();saveNow();render();toast('All data erased','Undo',undo)}
 };
 
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b||b.disabled)return;const f=A[b.dataset.a];if(f){e.preventDefault();f(b,e)}});
@@ -666,23 +685,23 @@ document.addEventListener('submit',e=>{const f=e.target;e.preventDefault();
 let jTimer;
 document.addEventListener('input',e=>{const t=e.target;
  if(t.id==='jText'){updCount();clearTimeout(jTimer);const k=curJ,v=t.value;jTimer=setTimeout(()=>setEntry(k,{text:v}),300)}
- else if(t.id==='jSearch')renderJList();
+ else if(t.id==='jSearch'){jLimit=60;renderJList()}
  else if(t.id==='tLabel'){T.label=t.value;saveT()}});
 document.addEventListener('change',e=>{const t=e.target;
  if(t.id==='jDate'&&t.value){curJ=t.value>key()?key():t.value;render()}
  else if(t.id==='jText'){clearTimeout(jTimer);setEntry(curJ,{text:t.value});renderJList()}
  else if(t.dataset.f){const k=t.dataset.f;if(t.type==='checkbox')S.focus[k]=t.checked;else{const lim={work:[1,240],short:[1,60],long:[1,120],every:[1,12]}[k];S.focus[k]=clamp(Math.round(+t.value)||lim[0],...lim);t.value=S.focus[k]}
-  if(!T.running)T.left=dur(T.mode);saveT();save();updTimer()}
+  if(!T.running&&!T.total)T.left=dur(T.mode);saveT();save();updTimer()}
  else if(t.name==='theme'){S.theme=t.value;save();applyTheme()}
  else if(t.id==='importF'&&t.files[0]){const file=t.files[0];file.text().then(txt=>{const d=JSON.parse(txt);if(!d||!d.v||!Array.isArray(d.habits))throw 0;
-  snap();S=merge(S,normalize(d));saveNow();closeDlg();render();toast(`Merged backup${d.exportedAt?' from '+fmtDT(d.exportedAt):''}`,'Undo',undo)}).catch(()=>toast('That file is not a Keel backup'))}});
+  snap();S=merge(S,normalize(d));save();saveNow();closeDlg();render();toast(`Merged backup${d.exportedAt?' from '+fmtDT(d.exportedAt):''}`,'Undo',undo)}).catch(()=>toast('That file is not a Keel backup'))}});
 document.addEventListener('toggle',e=>{const d=e.target;if(d.dataset&&d.dataset.id){d.open?openDetails.add(d.dataset.id):openDetails.delete(d.dataset.id)}},true);
 document.addEventListener('keydown',e=>{if(e.key===' '&&cur==='focus'&&!e.target.closest('input,textarea,button,select,dialog')){e.preventDefault();T.running?tPause():tStart()}});
 addEventListener('hashchange',()=>{const v=location.hash.slice(1);if(VIEWS[v]&&v!==cur)go(v)});
 addEventListener('pagehide',saveNow);
 let lastDay=key();
 function tick(){if(T.running&&now()>=T.endAt)tComplete();
- if(key()!==lastDay){lastDay=key();if(curJ<lastDay&&cur!=='journal')curJ=lastDay;render();return}
+ if(key()!==lastDay){lastDay=key();tidyTodos();if(curJ<lastDay&&cur!=='journal')curJ=lastDay;render();return}
  updTimer();if(cur==='since'||cur==='today')updCounters()}
 setInterval(tick,500);
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')saveNow();else{tick();if(T.running)wake(true)}});
@@ -692,6 +711,7 @@ function applyTheme(){const r=document.documentElement;if(S.theme==='system')r.r
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',applyTheme);
 
 /* ---------- boot ---------- */
+document.addEventListener('pointerdown',unlockAudio,{once:true});
 $('#nav').innerHTML=`<div class="brand"><img src="icon-192.png" alt="Keel"></div>`+Object.keys(VIEWS).map(v=>`<button data-a="go" data-v="${v}"><span class="ic">${I[v]}</span>${VIEWS[v].n}</button>`).join('');
 $('#gear').innerHTML=I.gear;
 applyTheme();

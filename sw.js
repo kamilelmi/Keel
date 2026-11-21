@@ -1,6 +1,6 @@
 // Keel service worker: caches the app so it opens offline.
 // Bump VERSION whenever you change index.html so devices pick up the update.
-const VERSION = 'keel-v2';
+const VERSION = 'keel-v4';
 const ASSETS = [
   './',
   './index.html',
