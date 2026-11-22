@@ -113,6 +113,19 @@ input:focus,textarea:focus,select:focus{outline:2px solid var(--acc);outline-off
 .cb svg{width:15px;height:15px;stroke-width:3;opacity:0;stroke:var(--on-acc)}
 .todo.done .cb i{background:var(--acc);border-color:var(--acc)}.todo.done .cb svg{opacity:1}
 .todo .tt{flex:1;overflow-wrap:anywhere}
+.todo .when{display:block;font-size:12px;font-weight:600;color:var(--bad);text-decoration:none}
+.tswipe{touch-action:pan-y}
+.dstrip{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;margin:6px 0 12px}
+.dp{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;min-height:54px;padding:4px 0;border:1px solid var(--line);border-radius:12px;background:var(--card2);font-size:12px;font-weight:600;color:var(--mute)}
+.dp b{font-size:17px;line-height:1.1;color:var(--ink);font-variant-numeric:tabular-nums}
+.dp.on{background:var(--ink);border-color:var(--ink);color:var(--bg)}.dp.on b{color:var(--bg)}
+.dp i{position:absolute;top:-7px;right:-5px;z-index:1;box-shadow:0 0 0 2px var(--card);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--acc);color:var(--on-acc);font-size:10px;font-style:normal;line-height:16px;text-align:center}
+.dp.on i{background:var(--acc);color:var(--on-acc)}
+.dp.td{border-color:var(--acc);border-width:2px}.dp.td:not(.on){color:var(--acc)}
+#taskCard{position:relative}
+.tdate{position:absolute;top:18px;right:18px;width:1px;height:1px;opacity:0;pointer-events:none;border:0;padding:0;min-height:0}
+.tlist.go-next{animation:goNext .22s ease-out}.tlist.go-prev{animation:goPrev .22s ease-out}
+@keyframes goNext{from{transform:translateX(32px);opacity:0}}@keyframes goPrev{from{transform:translateX(-32px);opacity:0}}
 .todo.done .tt{color:var(--mute);text-decoration:line-through}
 .qmoods{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:6px;margin-bottom:12px}
 .mini{display:flex;align-items:baseline;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);width:100%;background:none;border-left:0;border-right:0;border-top:0;text-align:left}
@@ -316,6 +329,8 @@ const I={
  play:'<svg viewBox="0 0 24 24" class="fillc"><path d="M8 5.5v13a1 1 0 0 0 1.5.9l10.4-6.5a1 1 0 0 0 0-1.8L9.5 4.6A1 1 0 0 0 8 5.5z"/></svg>',
  pause:'<svg viewBox="0 0 24 24"><path d="M8.5 5v14M15.5 5v14"/></svg>',
  reset:'<svg viewBox="0 0 24 24"><path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.6M4 4v4.6h4.6"/></svg>',
+ cal:'<svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>',
+ later:'<svg viewBox="0 0 24 24"><path d="M4 12h13M12 6.5l5.5 5.5-5.5 5.5M20.5 5v14"/></svg>',
  lock:'<svg viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10.5" rx="2.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/></svg>',
  skip:'<svg viewBox="0 0 24 24"><path d="M6 5l9 7-9 7zM18 5v14"/></svg>'
 };
@@ -342,7 +357,7 @@ function normalize(d){const b=blank();
  return{...b,...d,focus:{...b.focus,...(d.focus||{})},deleted:d.deleted&&typeof d.deleted==='object'?d.deleted:{},journal,
  habits:arr(d.habits).filter(h=>h&&h.name).map(h=>{const days=arr(h.days).map(Number).filter(x=>x>=0&&x<=6);return{...h,id:okId(h.id),name:String(h.name),color:okCol(h.color),days:days.length?days:[0,1,2,3,4,5,6],log:log(h.log),created:okKey(h.created)?h.created:key(),u:okNum(h.u)}}),
  counters:arr(d.counters).filter(c=>c&&c.name).map(c=>({...c,id:okId(c.id),name:String(c.name),start:Math.min(okNum(c.start,Date.now()),Date.now()),u:okNum(c.u),resets:arr(c.resets).filter(r=>r).map(r=>({at:okNum(r.at),len:okNum(r.len),note:String(r.note||'')}))})),
- todos:arr(d.todos).filter(x=>x&&x.text).map(x=>({...x,id:okId(x.id),text:String(x.text),done:!!x.done,doneAt:okNum(x.doneAt),u:okNum(x.u)})),
+ todos:arr(d.todos).filter(x=>x&&x.text).map(x=>({...x,id:okId(x.id),text:String(x.text),done:!!x.done,doneAt:okNum(x.doneAt),u:okNum(x.u),date:okKey(x.date)?x.date:key()})),
  sessions:arr(d.sessions).filter(x=>x&&x.at).map(x=>({...x,id:okId(x.id),at:okNum(x.at),mins:okNum(x.mins),label:String(x.label||''),u:okNum(x.u)}))}}
 /* passcode lock: when on, everything in STORE is AES-256-GCM encrypted with a key derived from the passcode */
 const ITER=600000,te=new TextEncoder(),td=new TextDecoder();
@@ -373,7 +388,7 @@ function undo(){if(!undoSnap)return;S=normalize(JSON.parse(undoSnap));undoSnap=n
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 
 // tidy: drop tasks ticked off before today
-function tidyTodos(){if(locked)return;const t=key();const old=S.todos.filter(x=>x.done&&key(new Date(x.doneAt))<t);if(old.length){old.forEach(x=>tomb(x.id));S.todos=S.todos.filter(x=>!old.includes(x));saveNow()}}
+function tidyTodos(){if(locked)return;const t=key();const old=S.todos.filter(x=>x.done&&key(new Date(x.doneAt))<t&&(x.date||'')<t);if(old.length){old.forEach(x=>tomb(x.id));S.todos=S.todos.filter(x=>!old.includes(x));saveNow()}}
 tidyTodos();
 
 /* merge two data sets (for moving data between devices) */
@@ -469,30 +484,50 @@ const openDetails=new Set();
 function hrow(h,k){const d=isDone(h,k),st=streak(h);
  return `<button class="hrow ${d?'done':''}" style="--c:${h.color}" data-a="tog" data-id="${h.id}" data-k="${k}" aria-pressed="${d}">
  <span class="tick">${I.check}</span><span class="hname">${esc(h.name)}</span><span class="hmeta">${st?plural(st,'day'):''}</span></button>`}
-function todoRow(x){return `<div class="todo ${x.done?'done':''}"><button class="cb" data-a="todo" data-id="${x.id}" aria-pressed="${!!x.done}" aria-label="${x.done?'Mark not done':'Mark done'}"><i>${I.check}</i></button>
- <span class="tt">${esc(x.text)}</span><button class="ibtn" data-a="delTodo" data-id="${x.id}" aria-label="Delete task">${I.x}</button></div>`}
+/* tasks can be planned for any day; unfinished ones carry over to today */
+let tDay=key(),tSlide='';
+const dayName=k=>{const t=key();return k===t?'today':k===key(addDays(new Date(),1))?'tomorrow':fmtDate(fromKey(k),{weekday:'short',day:'numeric',month:'short'})};
+const tasksOn=k=>{const t=key();return S.todos.filter(x=>k===t?x.date<=t:x.date===k)};
+const openOn=k=>tasksOn(k).filter(x=>!x.done).length;
+function todoRow(x){const over=!x.done&&x.date<key();
+ return `<div class="todo ${x.done?'done':''}"><button class="cb" data-a="todo" data-id="${x.id}" aria-pressed="${!!x.done}" aria-label="${x.done?'Mark not done':'Mark done'}"><i>${I.check}</i></button>
+ <span class="tt">${esc(x.text)}${over?`<small class="when">From ${x.date===key(addDays(new Date(),-1))?'yesterday':esc(dayName(x.date))}</small>`:''}</span>
+ ${x.done?'':`<button class="ibtn" data-a="later" data-id="${x.id}" aria-label="Move to the next day">${I.later}</button>`}<button class="ibtn" data-a="delTodo" data-id="${x.id}" aria-label="Delete task">${I.x}</button></div>`}
+function stripDays(){const t=new Date(),tk=key(t);let start=t;
+ if(tDay>key(addDays(t,6))){const d=addDays(fromKey(tDay),-3);start=key(d)<tk?t:d}
+ return[...Array(7)].map((_,i)=>addDays(start,i))}
+function taskCard(){
+ const tk=key(),list=tasksOn(tDay),open=list.filter(x=>!x.done).sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0),done=list.filter(x=>x.done);
+ const label=tDay===tk?'Today':tDay===key(addDays(new Date(),1))?'Tomorrow':fmtDate(fromKey(tDay),{weekday:'long',day:'numeric',month:'long'});
+ const cls=tSlide?' go-'+tSlide:'';tSlide='';
+ return `<div class="ch"><div class="grow"><h2>Tasks</h2><span class="small mute" id="tLabel2">${label}</span></div>
+  ${done.length?'<button class="btn ghost sm" data-a="clearDone">Clear done</button>':''}
+  <button class="ibtn" data-a="tpick" aria-label="Pick a date">${I.cal}</button><input type="date" class="tdate" id="tPick" min="${tk}" value="${tDay}" tabindex="-1" aria-hidden="true"></div>
+ <div class="dstrip" role="group" aria-label="Choose a day">${stripDays().map(d=>{const k=key(d),n=openOn(k);
+  return `<button class="dp ${k===tDay?'on':''} ${k===tk?'td':''}" data-a="tday" data-k="${k}" aria-pressed="${k===tDay}" aria-label="${fmtDate(d)}${n?', '+plural(n,'task'):''}">${n?`<i>${n>9?'9+':n}</i>`:''}${WD[d.getDay()]}<b>${d.getDate()}</b></button>`}).join('')}</div>
+ <form id="todoForm" class="addrow" autocomplete="off"><input type="text" name="t" placeholder="Add a task for ${esc(dayName(tDay))}" maxlength="200" aria-label="New task for ${esc(dayName(tDay))}"><button class="btn pri" aria-label="Add task">${I.plus}</button></form>
+ <div class="tlist${cls}" id="tList">${[...open,...done].map(todoRow).join('')||`<p class="empty">${tDay===tk?'Nothing on the list yet.':'Nothing planned for '+esc(dayName(tDay))+' yet.'} <span class="small">Swipe or tap a day to plan ahead.</span></p>`}</div>`}
+function setTaskDay(k){const tk=key();if(k<tk)k=tk;if(k===tDay)return;tSlide=k>tDay?'next':'prev';tDay=k;
+ const c=$('#taskCard');if(c){c.innerHTML=taskCard()}else render()}
 
 function vToday(){
  const t=new Date(),k=key(t);
  const due=S.habits.filter(h=>sched(h,t)||isDone(h,k));
  const dn=due.filter(h=>isDone(h,k)).length;
- const open=S.todos.filter(x=>!x.done),doneT=S.todos.filter(x=>x.done);
+ const open=tasksOn(k).filter(x=>!x.done);
  const j=S.journal[k],fm=focusMins(k);
  const jl=j&&j.mood?MOODS[j.mood-1].n:(j&&j.text?'Written':'Not yet');
  return `<div class="stats">
   <div class="stat"><b>${dn}<small>/${due.length}</small></b><span>Habits done</span></div>
   <div class="stat"><b>${fm}<small> min</small></b><span>Focused today</span></div>
-  <div class="stat"><b>${open.length}</b><span>Tasks open</span></div>
+  <div class="stat"><b>${open.length}</b><span>Tasks today</span></div>
   <div class="stat"><b>${jl}</b><span>Journal</span></div></div>
  <div class="cols"><div class="stack-g">
   <section class="card"><div class="ch"><h2>Habits today</h2><button class="ibtn" data-a="go" data-v="habits" aria-label="Open habits">${I.right}</button></div>
    ${due.length?`<div class="prog"><i style="width:${due.length?dn/due.length*100:0}%"></i></div>${due.map(h=>hrow(h,k)).join('')}`
    :`<p class="empty">${S.habits.length?'Nothing scheduled today. Enjoy the rest.':'No habits yet.'}</p>${S.habits.length?'':`<button class="btn" data-a="go" data-v="habits">${I.plus} Add your first habit</button>`}`}
   </section>
-  <section class="card"><div class="ch"><h2>Tasks</h2>${doneT.length?'<button class="btn ghost sm" data-a="clearDone">Clear done</button>':''}</div>
-   <form id="todoForm" class="addrow" autocomplete="off"><input type="text" name="t" placeholder="Add a task for today" maxlength="200" aria-label="New task"><button class="btn pri" aria-label="Add task">${I.plus}</button></form>
-   ${[...open,...doneT].map(todoRow).join('')||'<p class="empty">Nothing on the list yet.</p>'}
-  </section></div>
+  <section class="card tswipe" id="taskCard">${taskCard()}</section></div>
   <div class="stack-g">
   <section class="card"><div class="ch"><h2>How's today?</h2><button class="ibtn" data-a="go" data-v="journal" aria-label="Open journal">${I.right}</button></div>
    <div class="qmoods">${MOODS.map(m=>`<button class="mood ${j&&j.mood===m.v?'on':''}" style="--m:${m.c}" data-a="qmood" data-m="${m.v}" aria-pressed="${!!(j&&j.mood===m.v)}"><i></i>${m.n}</button>`).join('')}</div>
@@ -761,7 +796,10 @@ const A={
   snap();S.habits=S.habits.filter(x=>x!==h);tomb(h.id);save();render();toast('Habit deleted','Undo',undo)},
  todo:b=>{const x=S.todos.find(t=>t.id===b.dataset.id);if(!x)return;x.done=!x.done;x.doneAt=x.done?now():0;x.u=now();save();render()},
  delTodo:b=>{snap();S.todos=S.todos.filter(t=>t.id!==b.dataset.id);tomb(b.dataset.id);save();render();toast('Task deleted','Undo',undo)},
- clearDone:()=>{snap();S.todos.filter(t=>t.done).forEach(t=>tomb(t.id));S.todos=S.todos.filter(t=>!t.done);save();render();toast('Cleared finished tasks','Undo',undo)},
+ clearDone:()=>{const gone=tasksOn(tDay).filter(t=>t.done);if(!gone.length)return;snap();gone.forEach(t=>tomb(t.id));S.todos=S.todos.filter(t=>!gone.includes(t));save();render();toast('Cleared finished tasks','Undo',undo)},
+ tday:b=>setTaskDay(b.dataset.k),
+ tpick:()=>{const i=$('#tPick');if(!i)return;try{i.showPicker()}catch(e){i.style.pointerEvents='auto';i.focus();i.click()}},
+ later:b=>{const x=S.todos.find(t=>t.id===b.dataset.id);if(!x)return;snap();const tk=key();x.date=key(addDays(fromKey(x.date>tk?x.date:tk),1));x.u=now();save();render();toast(`Moved to ${dayName(x.date)}`,'Undo',undo)},
  qmood:b=>{const k=key(),m=+b.dataset.m,e=S.journal[k]||{};setEntry(k,{mood:e.mood===m?0:m});render()},
  tgo:()=>{tStart();if(cur==='today')render()},tpause:()=>{tPause();if(cur==='today')render()},
  ttoggle:()=>T.running?tPause():tStart(),treset:()=>tReset(),tskip:()=>tSkip(),tmode:async b=>{const m=b.dataset.m;if(m===T.mode)return;if(T.running&&!await confirmBox('Stop the running timer?','Switching mode resets the current countdown.','Switch',false))return;tMode(m)},
@@ -788,7 +826,7 @@ const A={
 
 document.addEventListener('click',e=>{const b=e.target.closest('[data-a]');if(!b||b.disabled)return;const f=A[b.dataset.a];if(f){e.preventDefault();f(b,e)}});
 document.addEventListener('submit',e=>{const f=e.target;e.preventDefault();
- if(f.id==='todoForm'){const t=(new FormData(f).get('t')||'').trim();if(!t)return;S.todos.push({id:uid(),text:t,done:false,doneAt:0,u:now()});save();render();$('#todoForm input')?.focus()}
+ if(f.id==='todoForm'){const t=(new FormData(f).get('t')||'').trim();if(!t)return;S.todos.push({id:uid(),text:t,done:false,doneAt:0,u:now(),date:tDay<key()?key():tDay});save();render();$('#todoForm input')?.focus()}
  else if(f.id==='lockForm'){const v=$('#lockIn').value;if(v)unlock(v)}
  else if(f.id==='dlgForm'&&onSubmit)onSubmit(new FormData(f),f)});
 let jTimer;
@@ -797,7 +835,8 @@ document.addEventListener('input',e=>{const t=e.target;
  else if(t.id==='jSearch'){jLimit=60;renderJList()}
  else if(t.id==='tLabel'){T.label=t.value;saveT()}});
 document.addEventListener('change',e=>{const t=e.target;
- if(t.id==='jDate'&&t.value){curJ=t.value>key()?key():t.value;render()}
+ if(t.id==='tPick'&&t.value){setTaskDay(t.value)}
+ else if(t.id==='jDate'&&t.value){curJ=t.value>key()?key():t.value;render()}
  else if(t.id==='jText'){clearTimeout(jTimer);setEntry(curJ,{text:t.value});renderJList()}
  else if(t.dataset.f){const k=t.dataset.f;if(t.type==='checkbox')S.focus[k]=t.checked;else{const lim={work:[1,240],short:[1,60],long:[1,120],every:[1,12]}[k];S.focus[k]=clamp(Math.round(+t.value)||lim[0],...lim);t.value=S.focus[k]}
   if(!T.running&&!T.total)T.left=dur(T.mode);saveT();save();updTimer()}
@@ -805,7 +844,21 @@ document.addEventListener('change',e=>{const t=e.target;
  else if(t.name==='lockDelay'&&LK){lockDelay=+t.value;S.lockDelay=lockDelay;save()}
  else if(t.id==='importF'&&t.files[0]){const file=t.files[0];file.text().then(txt=>{const d=JSON.parse(txt);if(d&&okEnc(d.enc)){importLockedDlg(d);return}if(!d||!d.v||!Array.isArray(d.habits))throw 0;doMerge(d,d.exportedAt)}).catch(()=>toast('That file is not a Keel backup'))}});
 document.addEventListener('toggle',e=>{const d=e.target;if(d.dataset&&d.dataset.id){d.open?openDetails.add(d.dataset.id):openDetails.delete(d.dataset.id)}},true);
+document.addEventListener('keydown',e=>{if((e.key==='ArrowRight'||e.key==='ArrowLeft')&&!locked&&cur==='today'&&!dlg.open&&!e.target.closest('input,textarea,select')&&!e.altKey&&!e.ctrlKey&&!e.metaKey){
+  e.preventDefault();setTaskDay(key(addDays(fromKey(tDay),e.key==='ArrowRight'?1:-1)));return}});
 document.addEventListener('keydown',e=>{if(e.key===' '&&!locked&&cur==='focus'&&!e.target.closest('input,textarea,button,select,dialog')){e.preventDefault();T.running?tPause():tStart()}});
+/* swipe left/right on the Tasks card to change day */
+let sw=null;
+document.addEventListener('touchstart',e=>{const c=e.target.closest&&e.target.closest('#taskCard');if(!c||e.touches.length!==1||e.target.closest('input,textarea')){sw=null;return}
+ const t=e.touches[0];sw={x:t.clientX,y:t.clientY,dir:''}},{passive:true});
+document.addEventListener('touchmove',e=>{if(!sw)return;const t=e.touches[0],dx=t.clientX-sw.x,dy=t.clientY-sw.y;
+ if(!sw.dir){if(Math.abs(dx)>10&&Math.abs(dx)>Math.abs(dy)*1.3)sw.dir='h';else if(Math.abs(dy)>10){sw=null;return}else return}
+ const l=$('#tList');if(l){const back=dx>0&&tDay<=key();l.style.transition='none';l.style.transform=`translateX(${dx*(back?0.12:0.45)}px)`}},{passive:true});
+function endSwipe(e){if(!sw)return;const s=sw;sw=null;const l=$('#tList');if(l){l.style.transition='transform .18s';l.style.transform=''}
+ if(!e||s.dir!=='h')return;const t=e.changedTouches[0],dx=t.clientX-s.x,dy=t.clientY-s.y;
+ if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)*1.3){const k=key(addDays(fromKey(tDay),dx<0?1:-1));if(k>=key())setTaskDay(k)}}
+document.addEventListener('touchend',endSwipe,{passive:true});
+document.addEventListener('touchcancel',()=>endSwipe(null),{passive:true});
 addEventListener('hashchange',()=>{const v=location.hash.slice(1);if(VIEWS[v]&&v!==cur)go(v)});
 addEventListener('pagehide',saveNow);
 let lastDay=key();
@@ -814,7 +867,7 @@ function lockedAlert(){T.alerted=true;saveT();if(S.focus.sound!==false)chime();t
   navigator.serviceWorker.ready.then(r=>r.showNotification('Keel',{body:'Your timer is done.',tag:'keel-timer',renotify:true,icon:'icon-192.png'})).catch(()=>{})}
 function tick(){if(locked){if(T.running&&now()>=T.endAt&&!T.alerted)lockedAlert();return}
  if(T.running&&now()>=T.endAt)tComplete();
- if(key()!==lastDay){lastDay=key();tidyTodos();if(curJ<lastDay&&cur!=='journal')curJ=lastDay;render();return}
+ if(key()!==lastDay){lastDay=key();tidyTodos();if(tDay<lastDay)tDay=lastDay;if(curJ<lastDay&&cur!=='journal')curJ=lastDay;render();return}
  updTimer();if(cur==='since'||cur==='today')updCounters()}
 setInterval(tick,500);
 function flushJournal(){const ta=$('#jText');if(!ta||locked)return;clearTimeout(jTimer);if(ta.value!==((S.journal[curJ]||{}).text||''))setEntry(curJ,{text:ta.value})}
