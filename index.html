@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0e1014">
+<meta name="color-scheme" content="light dark">
 <meta name="description" content="Habits, journal, focus timer and days-since counters. Works offline.">
 <title>Keel</title>
 <link rel="manifest" href="manifest.webmanifest">
@@ -23,7 +24,7 @@ LAYOUT  bottom tab bar on the phone cover screen, side rail + two columns when u
 --ink:light-dark(#14161b,#eceef3);--mute:light-dark(#5a606b,#9aa2af);--line:light-dark(#e1e4e9,#272c35);
 --acc:light-dark(#2f5bea,#7d9bff);--acc-soft:light-dark(#e7edff,#1f2849);--on-acc:light-dark(#ffffff,#0a0f22);
 --good:light-dark(#178a4c,#4cc38a);--bad:light-dark(#c63636,#ff7d7d);--r:18px;--nav:68px}
-:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+:root[data-theme=light]{color-scheme:only light}:root[data-theme=dark]{color-scheme:only dark}
 *{box-sizing:border-box;min-width:0}
 [hidden]{display:none!important}
 html{-webkit-text-size-adjust:100%}
@@ -691,11 +692,26 @@ function counterDlg(id,preset){const c=S.counters.find(x=>x.id===id);
  <div class="row end">${c?`<button type="button" class="btn ghost danger" data-a="delCounter" data-id="${c.id}">Delete</button><span class="sp"></span>`:''}<button type="button" class="btn ghost" data-a="close">Cancel</button><button class="btn pri">Save</button></div>`,
  fd=>{const name=(fd.get('name')||'').trim();if(!name)return;let st=new Date(fd.get('start')).getTime();if(!isFinite(st)||st>now())st=now();
   if(c)Object.assign(c,{name,start:st,u:now()});else S.counters.push({id:uid(),name,start:st,resets:[],u:now()});save();closeDlg();render()})}
-function resetDlg(id){const c=S.counters.find(x=>x.id===id);if(!c)return;
- openDlg(`<h2>Reset "${esc(c.name)}"?</h2><p class="mute" style="margin-bottom:14px">This run of ${shortDur(elapsed(c))} goes into your history and the counter starts again from now. One slip doesn't erase the progress you've made.</p>
+function resetDlg(id){const c=S.counters.find(x=>x.id===id);if(!c)return;const t0=now();
+ const ago=[[0,'Now'],[30,'30 min ago'],[60,'1 hour ago'],[180,'3 hours ago']].filter(([m])=>t0-m*6e4>=c.start);
+ openDlg(`<h2>Reset "${esc(c.name)}"?</h2><p class="mute" style="margin-bottom:14px">This run goes into your history and the counter starts again from the time you slipped. One slip doesn't erase the progress you've made.</p>
+ <label class="fld"><span>When did it happen?</span><input type="datetime-local" name="at" id="slipAt" value="${toLocalInput(t0)}" min="${toLocalInput(c.start)}" max="${toLocalInput(t0)}" required></label>
+ <div class="chips" style="margin:-6px 0 8px">${ago.map(([m,n])=>`<button type="button" class="chip" data-a="slipAgo" data-m="${m}">${n}</button>`).join('')}</div>
+ <p class="small mute" id="slipLen" style="margin-bottom:14px"></p>
  <label class="fld"><span>What happened? (optional)</span><textarea name="note" style="min-height:90px" maxlength="300" placeholder="Triggers, time of day, how you felt…"></textarea></label>
+ <p class="err" id="dErr"></p>
  <div class="row end"><button type="button" class="btn ghost" data-a="close">Cancel</button><button class="btn danger">Reset counter</button></div>`,
- fd=>{snap();const t=now();c.resets.push({at:t,len:t-c.start,note:(fd.get('note')||'').trim()});c.start=t;c.u=t;save();closeDlg();render();toast('Counter reset. Fresh start.','Undo',undo)})}
+ fd=>{let at=new Date(fd.get('at')).getTime();const t=now();if(!Number.isFinite(at))return setErr('Pick the date and time it happened.');
+  if(at>t+60000)return setErr("That time is in the future.");
+  if(at<c.start-60000)return setErr(`That's before this run started (${fmtDT(c.start)}).`);
+  at=Math.min(Math.max(at,c.start),t);
+  snap();c.resets.push({at,len:at-c.start,note:(fd.get('note')||'').trim()});c.start=at;c.u=t;save();closeDlg();render();
+  toast(t-at<120000?'Counter reset. Fresh start.':`Counter reset to ${fmtDT(at)}.`,'Undo',undo)});
+ slipLen(c)}
+function slipLen(c){const i=$('#slipAt'),o=$('#slipLen');if(!i||!o)return;const at=new Date(i.value).getTime();
+ o.textContent=!Number.isFinite(at)?'':at<c.start-60000?'That is before this run started.':at>now()+60000?'That time is in the future.':`This run will be saved as ${shortDur(Math.max(0,Math.min(at,now())-c.start))}.`;
+ slipCtr=c}
+let slipCtr=null;
 let installEvt=null;
 addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEvt=e});
 function settingsDlg(){
@@ -813,6 +829,7 @@ const A={
  delEntry:async()=>{if(!await confirmBox('Delete this entry?',fmtDate(fromKey(curJ))+' will be removed.','Delete',true))return;snap();delete S.journal[curJ];S.deleted['j:'+curJ]=now();save();render();toast('Entry deleted','Undo',undo)},
  newCounter:()=>counterDlg(),editCounter:b=>counterDlg(b.dataset.id),quickCounter:b=>counterDlg(null,b.dataset.n),
  resetCounter:b=>resetDlg(b.dataset.id),
+ slipAgo:b=>{const i=$('#slipAt');if(!i||!slipCtr)return;i.value=toLocalInput(Math.max(slipCtr.start,now()-(+b.dataset.m)*6e4));slipLen(slipCtr)},
  delCounter:async b=>{const c=S.counters.find(x=>x.id===b.dataset.id);closeDlg();if(!await confirmBox('Delete this counter?',`"${c.name}" and its history will be removed.`,'Delete',true))return;
   snap();S.counters=S.counters.filter(x=>x!==c);tomb(c.id);save();render();toast('Counter deleted','Undo',undo)},
  export:async()=>{const a=document.createElement('a');a.href=URL.createObjectURL(await backupBlob());a.download=backupName();document.body.appendChild(a);a.click();
@@ -833,7 +850,8 @@ let jTimer;
 document.addEventListener('input',e=>{const t=e.target;
  if(t.id==='jText'){updCount();clearTimeout(jTimer);const k=curJ,v=t.value;jTimer=setTimeout(()=>setEntry(k,{text:v}),300)}
  else if(t.id==='jSearch'){jLimit=60;renderJList()}
- else if(t.id==='tLabel'){T.label=t.value;saveT()}});
+ else if(t.id==='tLabel'){T.label=t.value;saveT()}
+ else if(t.id==='slipAt'&&slipCtr)slipLen(slipCtr)});
 document.addEventListener('change',e=>{const t=e.target;
  if(t.id==='tPick'&&t.value){setTaskDay(t.value)}
  else if(t.id==='jDate'&&t.value){curJ=t.value>key()?key():t.value;render()}
