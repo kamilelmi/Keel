@@ -177,6 +177,7 @@ details[open]>summary::before{transform:rotate(45deg)}
 .go svg.fillc{fill:currentColor;stroke:none}
 .ctl .ibtn{width:52px;height:52px;border-radius:50%;background:var(--card2)}
 .focus .lbl{max-width:420px}
+.lenrow{display:grid;justify-items:center;gap:8px}.lenrow .chips{justify-content:center}
 .bars{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;align-items:end;height:140px;margin-top:8px}
 .bar{display:grid;grid-template-rows:minmax(0,1fr) auto;justify-items:center;gap:6px;height:100%;font-size:12px;color:var(--mute);font-weight:600}
 .bar u{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;width:100%;height:100%;text-decoration:none}
@@ -430,6 +431,10 @@ function shortDur(ms){const p=split(ms);return p.d?`${p.d}d ${p.h}h`:p.h?`${p.h}
 
 /* ---------- focus timer ---------- */
 const dur=m=>clamp(+S.focus[m]||1,1,240)*6e4;
+const PRESETS={work:[25,45,60,90],short:[5,10,15],long:[15,20,30]},LIM={work:[1,240],short:[1,60],long:[1,120],every:[1,12]};
+function lenRow(){const m=T.mode,v=+S.focus[m],ps=PRESETS[m],custom=!ps.includes(v);
+ return `<div class="lenrow" id="lenRow" ${T.running?'hidden':''}><span class="small mute">${m==='work'?'Focus length':'Break length'}</span><div class="chips" role="group" aria-label="${MODE[m].n} length">${ps.map(n=>`<button class="chip ${v===n?'on':''}" data-a="tlen" data-n="${n}" aria-pressed="${v===n}">${n} min</button>`).join('')}<button class="chip ${custom?'on':''}" data-a="tlenc" aria-pressed="${custom}">${custom?v+' min':'Custom'}</button></div></div>`}
+function setLen(n){const m=T.mode;S.focus[m]=clamp(Math.round(n),...LIM[m]);save();T.running=false;T.left=dur(m);T.total=0;T.endAt=0;saveT();render();toast(`${MODE[m].n}: ${S.focus[m]} min`)}
 let T=null;try{T=JSON.parse(localStorage.getItem(TSTORE))}catch(e){}
 if(!T||!MODE[T.mode])T={mode:'work',running:false,endAt:0,left:dur('work'),round:0,label:''};
 const saveT=()=>{try{localStorage.setItem(TSTORE,JSON.stringify(T))}catch(e){}};
@@ -468,7 +473,7 @@ function updTimer(){
  const l=tLeft(),tot=T.total||dur(T.mode),p=1-l/tot;
  const big=$('#tLeft');if(big){big.textContent=mmss(l);
   const c=$('#prog');if(c){const C=2*Math.PI*96;c.style.strokeDasharray=C;c.style.strokeDashoffset=C*(1-clamp(p,0,1))}
-  const g=$('#tGo'),st=T.running?'run':'stop';if(g&&g.dataset.s!==st){g.dataset.s=st;g.innerHTML=T.running?I.pause:I.play;g.setAttribute('aria-label',T.running?'Pause':'Start')}
+  const lr=$('#lenRow');if(lr)lr.hidden=T.running;const g=$('#tGo'),st=T.running?'run':'stop';if(g&&g.dataset.s!==st){g.dataset.s=st;g.innerHTML=T.running?I.pause:I.play;g.setAttribute('aria-label',T.running?'Pause':'Start')}
   const sub=$('#tSub');if(sub)sub.textContent=T.mode==='work'?`Round ${T.round%S.focus.every+1} of ${S.focus.every}`:MODE[T.mode].n}
  const q=$('#qT');if(q)q.textContent=mmss(l);
  document.title=T.running?`${mmss(l)} · ${MODE[T.mode].n}`:'Keel';
@@ -576,6 +581,7 @@ function vFocus(){
   <div class="ringw"><svg class="ring" viewBox="0 0 220 220" aria-hidden="true"><circle class="trk" cx="110" cy="110" r="96"/><circle class="prg" id="prog" cx="110" cy="110" r="96"/></svg>
    <div class="ringt"><div class="big" id="tLeft" role="timer">${mmss(tLeft())}</div><div class="mute" id="tSub"></div></div></div>
   <input type="text" id="tLabel" class="lbl" placeholder="What are you focusing on?" maxlength="80" value="${esc(T.label)}" aria-label="Focus label">
+  ${lenRow()}
   <div class="ctl"><button class="ibtn" data-a="treset" aria-label="Reset timer">${I.reset}</button><button class="go" id="tGo" data-a="ttoggle"></button><button class="ibtn" data-a="tskip" aria-label="Skip to next">${I.skip}</button></div>
   <p class="small mute">Space bar starts and pauses on a keyboard. Keep Keel open for an on-time alarm; if your phone puts it to sleep, the session is still logged when you come back.</p>
  </section>
@@ -818,7 +824,11 @@ const A={
  later:b=>{const x=S.todos.find(t=>t.id===b.dataset.id);if(!x)return;snap();const tk=key();x.date=key(addDays(fromKey(x.date>tk?x.date:tk),1));x.u=now();save();render();toast(`Moved to ${dayName(x.date)}`,'Undo',undo)},
  qmood:b=>{const k=key(),m=+b.dataset.m,e=S.journal[k]||{};setEntry(k,{mood:e.mood===m?0:m});render()},
  tgo:()=>{tStart();if(cur==='today')render()},tpause:()=>{tPause();if(cur==='today')render()},
- ttoggle:()=>T.running?tPause():tStart(),treset:()=>tReset(),tskip:()=>tSkip(),tmode:async b=>{const m=b.dataset.m;if(m===T.mode)return;if(T.running&&!await confirmBox('Stop the running timer?','Switching mode resets the current countdown.','Switch',false))return;tMode(m)},
+ ttoggle:()=>T.running?tPause():tStart(),treset:()=>tReset(),
+ tlen:async b=>{const n=+b.dataset.n;if(n===+S.focus[T.mode]&&!T.total)return;if(T.total&&T.left<T.total&&!await confirmBox('Change the length?','This restarts the paused countdown at the new length.','Change',false))return;setLen(n)},
+ tlenc:()=>{const m=T.mode,[lo,hi]=LIM[m];openDlg(`<h2>${MODE[m].n} length</h2><label class="fld"><span>Minutes (${lo}–${hi})</span><input type="number" name="n" id="lenIn" min="${lo}" max="${hi}" step="1" value="${S.focus[m]}" inputmode="numeric" required></label>
+  <p class="err" id="dErr"></p><div class="row end"><button type="button" class="btn ghost" data-a="close">Cancel</button><button class="btn pri">Set</button></div>`,
+  fd=>{const n=Math.round(+fd.get('n'));if(!Number.isFinite(n)||n<lo||n>hi){$('#dErr').textContent=`Enter a number from ${lo} to ${hi}.`;return}closeDlg();setLen(n)});setTimeout(()=>{const i=$('#lenIn');i&&(i.focus(),i.select())},50)},tskip:()=>tSkip(),tmode:async b=>{const m=b.dataset.m;if(m===T.mode)return;if(T.running&&!await confirmBox('Stop the running timer?','Switching mode resets the current countdown.','Switch',false))return;tMode(m)},
  jprev:()=>{curJ=key(addDays(fromKey(curJ),-1));render()},
  jnext:()=>{const n=key(addDays(fromKey(curJ),1));if(n<=key()){curJ=n;render()}},
  jtoday:()=>{curJ=key();render()},
@@ -856,8 +866,8 @@ document.addEventListener('change',e=>{const t=e.target;
  if(t.id==='tPick'&&t.value){setTaskDay(t.value)}
  else if(t.id==='jDate'&&t.value){curJ=t.value>key()?key():t.value;render()}
  else if(t.id==='jText'){clearTimeout(jTimer);setEntry(curJ,{text:t.value});renderJList()}
- else if(t.dataset.f){const k=t.dataset.f;if(t.type==='checkbox')S.focus[k]=t.checked;else{const lim={work:[1,240],short:[1,60],long:[1,120],every:[1,12]}[k];S.focus[k]=clamp(Math.round(+t.value)||lim[0],...lim);t.value=S.focus[k]}
-  if(!T.running&&!T.total)T.left=dur(T.mode);saveT();save();updTimer()}
+ else if(t.dataset.f){const k=t.dataset.f;if(t.type==='checkbox')S.focus[k]=t.checked;else{const lim=LIM[k];S.focus[k]=clamp(Math.round(+t.value)||lim[0],...lim);t.value=S.focus[k]}
+  if(!T.running&&!T.total)T.left=dur(T.mode);saveT();save();updTimer();const lr=$('#lenRow');if(lr)lr.outerHTML=lenRow()}
  else if(t.name==='theme'){S.theme=t.value;save();applyTheme()}
  else if(t.name==='lockDelay'&&LK){lockDelay=+t.value;S.lockDelay=lockDelay;save()}
  else if(t.id==='importF'&&t.files[0]){const file=t.files[0];file.text().then(txt=>{const d=JSON.parse(txt);if(d&&okEnc(d.enc)){importLockedDlg(d);return}if(!d||!d.v||!Array.isArray(d.habits))throw 0;doMerge(d,d.exportedAt)}).catch(()=>toast('That file is not a Keel backup'))}});
