@@ -916,7 +916,10 @@ $('#gear').innerHTML=I.gear;$('#lockTop').innerHTML=I.lock;
 applyTheme();
 if(locked)showLock();else if(T.running&&now()>=T.endAt)tComplete();
 go(cur);
-if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol))navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)){const hadSW=!!navigator.serviceWorker.controller;let reloaded=false;
+ navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>{document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')r.update().catch(()=>{})})}).catch(()=>{});
+ const doReload=()=>{if(reloaded)return;const a=document.activeElement;if(a&&a.matches('input,textarea')&&a.value){document.addEventListener('visibilitychange',doReload,{once:true});return}reloaded=true;location.reload()};
+ let firstClaim=!hadSW;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(firstClaim){firstClaim=false;return}doReload()})}
 }
 </script>
 </body>

@@ -1,6 +1,6 @@
 // Keel service worker: caches the app so it opens offline.
 // Bump VERSION whenever you change index.html so devices pick up the update.
-const VERSION = 'keel-v9';
+const VERSION = 'keel-v10';
 const ASSETS = [
   './',
   './index.html',
@@ -12,7 +12,7 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS)));
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' })))));
   self.skipWaiting();
 });
 
@@ -30,7 +30,7 @@ self.addEventListener('fetch', e => {
   // Pages: try the network first so updates arrive, fall back to the cached copy offline.
   if (req.mode === 'navigate') {
     e.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-cache' })
         .then(res => { const copy = res.clone(); caches.open(VERSION).then(c => c.put('./index.html', copy)); return res; })
         .catch(() => caches.match('./index.html'))
     );
